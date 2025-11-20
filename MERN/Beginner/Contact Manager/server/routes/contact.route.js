@@ -16,9 +16,5 @@ router.get("/", verifyToken, getAllContact);
 router.get("/:id", verifyToken, getContactById);
 router.put("/:id", verifyToken, updateContact);
 router.delete("/:id", verifyToken, deleteContact);
-// router.post("/login", loginUser);
-// router.get("/:id", verifyToken, getUser);
-// router.put("/:id", verifyToken, updateUser);
-// router.delete("/:id", verifyToken, deleteUser);
 
 export default router;
