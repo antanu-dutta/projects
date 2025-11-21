@@ -32,7 +32,7 @@ export const createContact = async (req, res) => {
 // get all contact
 export const getAllContact = async (req, res) => {
   try {
-    console.log(user);
+    const user = req.user;
     const contacts = await Contact.find({ userId: user.id }).select("-userId");
 
     return res.json({

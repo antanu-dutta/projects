@@ -3,9 +3,15 @@ import { createRoot } from "react-dom/client";
 import "./index.css";
 import App from "./App.tsx";
 import { BrowserRouter } from "react-router-dom";
+import UserContextProvider from "./context/UserContext.tsx";
+import ContactContextProvider from "./context/ContactContext.tsx";
 
 createRoot(document.getElementById("root")!).render(
   <BrowserRouter>
-    <App />
+    <UserContextProvider>
+      <ContactContextProvider>
+        <App />
+      </ContactContextProvider>
+    </UserContextProvider>
   </BrowserRouter>
 );

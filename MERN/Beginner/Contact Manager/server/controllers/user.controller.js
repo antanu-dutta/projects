@@ -1,34 +1,66 @@
 import User from "../models/user.model.js";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
+import mongoose from "mongoose";
 
 // function for creating new user
 export const createUser = async (req, res) => {
   try {
     const { name, email, password } = req.body;
 
-    if (!name || !email || !password)
-      return res.json({ success: false, message: "All fields are required" });
+    // 1. Validate fields
+    if (!name || !email || !password) {
+      return res
+        .status(400)
+        .json({ success: false, message: "All fields are required" });
+    }
 
+    // 2. Check if user already exists
     const isAlreadyUser = await User.findOne({ email });
-    if (isAlreadyUser)
-      return res.json({ success: false, message: "User already exists" });
+    if (isAlreadyUser) {
+      return res
+        .status(409) // 409 = Conflict (resource already exists)
+        .json({ success: false, message: "User already exists" });
+    }
 
-    const hasedPassword = await bcrypt.hash(password, 10);
-    const user = await User.create({ name, email, password: hasedPassword });
-    if (user)
-      return res.json({ success: true, message: "User created successfully" });
+    // 3. Hash password
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    // 4. Create user
+    const user = await User.create({
+      name,
+      email,
+      password: hashedPassword,
+    });
+
+    // 5. Send success response
+    return res.status(201).json({
+      success: true,
+      message: "User created successfully",
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+      },
+    });
   } catch (error) {
-    console.error("error while creating an user", error);
+    console.error("Error while creating user:", error);
+
+    // 6. Send error response
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error",
+      error: error.message,
+    });
   }
 };
 
-// function for logging user
+// function for logging in a user
 export const loginUser = async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    // 1. Check required fields
+    // 1. Validate required fields
     if (!email || !password) {
       return res.status(400).json({
         success: false,
@@ -36,7 +68,7 @@ export const loginUser = async (req, res) => {
       });
     }
 
-    // 2. Find user
+    // 2. Find user by email
     const user = await User.findOne({ email });
     if (!user) {
       return res.status(404).json({
@@ -45,7 +77,7 @@ export const loginUser = async (req, res) => {
       });
     }
 
-    // 3. Compare password
+    // 3. Compare the provided password with hashed password
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
       return res.status(401).json({
@@ -61,20 +93,15 @@ export const loginUser = async (req, res) => {
       { expiresIn: "7d" }
     );
 
-    // 5. Set cookie
-    res.cookie("token", token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "strict",
-      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
-    });
+    // 5. Set HTTP-Only cookie for security
+    res.cookie("token", token);
 
-    // 6. Send response
+    // 6. Send success response
     return res.status(200).json({
       success: true,
       message: "Login successful",
       user: {
-        id: user._id,
+        _id: user._id,
         name: user.name,
         email: user.email,
       },
@@ -82,19 +109,22 @@ export const loginUser = async (req, res) => {
     });
   } catch (error) {
     console.error("Login Error:", error);
+
+    // 7. Server error response
     return res.status(500).json({
       success: false,
       message: "Internal server error",
+      error: error.message,
     });
   }
 };
 
-// funtion for fetching user
+// function for fetching a user by ID
 export const getUser = async (req, res) => {
   try {
-    const { id } = req.params;
+    const { id } = req.user;
 
-    // Check if ID exists
+    // 1. Validate ID
     if (!id) {
       return res.status(400).json({
         success: false,
@@ -102,10 +132,18 @@ export const getUser = async (req, res) => {
       });
     }
 
-    // Fetch user
+    // 2. Check ObjectId format before querying DB
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid user ID format",
+      });
+    }
+
+    // 3. Fetch user & exclude password
     const user = await User.findById(id).select("-password");
 
-    // If not found
+    // 4. If no user found
     if (!user) {
       return res.status(404).json({
         success: false,
@@ -113,36 +151,31 @@ export const getUser = async (req, res) => {
       });
     }
 
-    // Success response
+    // 5. Success response
     return res.status(200).json({
       success: true,
+      message: "User fetched successfully",
       user,
     });
   } catch (error) {
     console.error("Get User Error:", error);
 
-    // Handle invalid MongoDB ID format
-    if (error.kind === "ObjectId") {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid user ID format",
-      });
-    }
-
+    // 6. Return server error
     return res.status(500).json({
       success: false,
       message: "Internal server error",
+      error: error.message,
     });
   }
 };
 
-// function for updating user
+// function for updating a user
 export const updateUser = async (req, res) => {
   try {
     const { id } = req.params;
 
-    // Only the logged-in user can update themselves
-    if (req.user.id !== id) {
+    // Only logged-in user can update his/her account
+    if (!req.user || req.user.id !== id) {
       return res.status(403).json({
         success: false,
         message: "Forbidden: You cannot update this user",
@@ -151,14 +184,29 @@ export const updateUser = async (req, res) => {
 
     const { name, email, password } = req.body;
 
+    // Prevent updating with empty body
+    if (!name && !email && !password) {
+      return res.status(400).json({
+        success: false,
+        message: "No valid fields to update",
+      });
+    }
+
     // Build update object
     const updateData = {};
     if (name) updateData.name = name;
     if (email) updateData.email = email;
-    if (password) updateData.password = await bcrypt.hash(password, 10);
 
+    if (password) {
+      // Hash password only if exists
+      const saltRounds = 10;
+      updateData.password = await bcrypt.hash(password, saltRounds);
+    }
+
+    // Update user in DB
     const updatedUser = await User.findByIdAndUpdate(id, updateData, {
       new: true,
+      runValidators: true, // ensures email format, etc.
     }).select("-password");
 
     if (!updatedUser) {
@@ -176,7 +224,7 @@ export const updateUser = async (req, res) => {
   } catch (error) {
     console.error("Update User Error:", error);
 
-    if (error.kind === "ObjectId") {
+    if (error?.kind === "ObjectId") {
       return res.status(400).json({
         success: false,
         message: "Invalid user ID format",
@@ -195,14 +243,15 @@ export const deleteUser = async (req, res) => {
   try {
     const { id } = req.params;
 
-    // Only logged-in user can delete themselves
-    if (req.user.id !== id) {
+    // Ensure user is logged in and can delete only themselves
+    if (!req.user || req.user.id !== id) {
       return res.status(403).json({
         success: false,
         message: "Forbidden: You cannot delete this user",
       });
     }
 
+    // Delete user
     const deletedUser = await User.findByIdAndDelete(id);
 
     if (!deletedUser) {
@@ -212,16 +261,69 @@ export const deleteUser = async (req, res) => {
       });
     }
 
-    // Clear auth cookie on delete
-    res.clearCookie("token");
+    // Clear auth cookie after delete
+    res.clearCookie("token", {
+      httpOnly: true,
+      secure: true,
+      sameSite: "none",
+    });
 
     return res.status(200).json({
       success: true,
-      message: "User deleted and logged out successfully",
+      message: "User account deleted successfully. Logged out.",
     });
   } catch (error) {
     console.error("Delete User Error:", error);
 
+    if (error?.kind === "ObjectId") {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid user ID format",
+      });
+    }
+
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error",
+    });
+  }
+};
+
+// function for getting me
+// Function to get the currently logged-in user
+export const getMe = async (req, res) => {
+  try {
+    // req.user is set by your authentication middleware after JWT verification
+    const userId = req.user?.id;
+
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: "Unauthorized: No user found",
+      });
+    }
+
+    // Fetch user data without password
+    const user = await User.findById(userId).select("-password");
+    console.log(user);
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    // Successful response
+    return res.status(200).json({
+      success: true,
+      message: "User fetched successfully",
+      user,
+    });
+  } catch (error) {
+    console.error("GetMe Error:", error);
+
+    // Invalid MongoDB ID
     if (error.kind === "ObjectId") {
       return res.status(400).json({
         success: false,
@@ -229,6 +331,7 @@ export const deleteUser = async (req, res) => {
       });
     }
 
+    // Server error
     return res.status(500).json({
       success: false,
       message: "Internal server error",
