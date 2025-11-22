@@ -1,9 +1,7 @@
-import axios from "axios";
 import React, { useState } from "react";
 import toast from "react-hot-toast";
 import { Link, useNavigate } from "react-router-dom";
 import { useUser } from "../context/UserContext";
-import { form } from "motion/react-client";
 
 type FormData = {
   email: string;
@@ -33,6 +31,7 @@ const Login = () => {
 
     try {
       const res = await login(formData);
+      console.log(res);
       if (res.status === 200) {
         setUser(res.data.user);
         navigate("/");

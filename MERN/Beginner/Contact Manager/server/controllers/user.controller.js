@@ -68,6 +68,8 @@ export const loginUser = async (req, res) => {
       });
     }
 
+    console.log(email);
+
     // 2. Find user by email
     const user = await User.findOne({ email });
     if (!user) {

@@ -35,6 +35,7 @@ const UserContextProvider = ({ children }: Props) => {
         formData,
         { withCredentials: true }
       );
+      console.log(res);
       return res;
     } catch (error) {
       return error;
